@@ -1,0 +1,64 @@
+//Steps to deploy strapi on docker and the docker image to aws ec2 instance.
+
+//Creating the docker image
+1. Install docker on local machine and run the application.
+2. Create a Dockerfile in the root directory of the project.
+    2.1 Paste the below content in that file
+        # Creating multi-stage build for production
+        FROM node:18-alpine as build
+        RUN apk update && apk add --no-cache build-base gcc autoconf automake zlib-dev libpng-dev vips-dev git > /dev/null 2>&1
+        ARG NODE_ENV=production
+        ENV NODE_ENV=${NODE_ENV}
+
+        WORKDIR /opt/
+        COPY package.json package-lock.json ./
+        RUN npm install -g node-gyp
+        RUN npm config set fetch-retry-maxtimeout 600000 -g && npm install --only=production
+        ENV PATH=/opt/node_modules/.bin:$PATH
+        WORKDIR /opt/app
+        COPY . .
+        RUN npm run build
+
+        # Creating final production image
+        FROM node:18-alpine
+        RUN apk add --no-cache vips-dev
+        ARG NODE_ENV=production
+        ENV NODE_ENV=${NODE_ENV}
+        WORKDIR /opt/
+        COPY --from=build /opt/node_modules ./node_modules
+        WORKDIR /opt/app
+        COPY --from=build /opt/app ./
+        ENV PATH=/opt/node_modules/.bin:$PATH
+
+        RUN chown -R node:node /opt/app
+        USER node
+        EXPOSE 1337
+        CMD ["npm", "run", "start"]
+
+    2.2 Create a .dockerignore file and the add the following content in that:
+        .tmp/
+        .cache/
+        .git/
+        build/
+        node_modules/
+        data/
+        backup/
+    
+    2.3 Run the following command to create the docker image:
+        docker build -t "name of the image" .
+
+
+// Hosting the image on aws ec2 instance
+
+1. First we need to deploy our image on dockerhub so that we can refer it in aws.
+2. Go to docker hub, create a repo (try to keep the name of the repo same as of the image you create in above step).
+3. Come to the code base and run the following command to push your image there:
+    docker push "name of your image":latest
+4. Go to aws and create an ec2 instance
+5. Connect to your created ec2 instance using your terminal or any ssh tools like putty.
+6. Inside the terminal follow the below steps:
+    6.1 sudo yum install docker.
+    6.2 sudo systemctl start docker.
+    6.3 sudo docker pull "name of your image in docker hub" (you can get this from dockerhub)
+    6.4 sudo docker run -d -p 80:1337 "name of your image".
+    6.5 Copy the ip address from the ec2 instance dashboard and hit that, your hosting will be there.
